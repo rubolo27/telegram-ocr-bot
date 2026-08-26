@@ -173,9 +173,12 @@ async def handle_photo(
 
         await update.message.reply_text(messaggio)
 
-    except Exception as errore:
+     except Exception as errore:
+        print(f"Errore OCR completo: {repr(errore)}")
+
         await update.message.reply_text(
-            "Si è verificato un errore mentre leggevo l'immagine."
+            "Errore durante la lettura dell'immagine.\n"
+            "Controlla i log su Railway: serve il dettaglio dell'errore."
         )
 
         print(f"Errore OCR: {errore}")
