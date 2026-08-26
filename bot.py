@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 import pytesseract
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
