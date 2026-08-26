@@ -10,19 +10,15 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Scarica la foto
     photo = await update.message.photo[-1].get_file()
     img_bytes = await photo.download_as_bytearray()
     img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-    # Preprocessing semplice per migliorare OCR
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # OCR
     text = pytesseract.image_to_string(thresh, lang="eng", config="--psm 6")
 
-    # Estrai numeri tra 40 e 99 (tipici overall)
     numbers = [int(x) for x in re.findall(r"\b\d{2,3}\b", text) if 40 <= int(x) <= 99]
 
     if not numbers:
@@ -40,7 +36,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    # run_polling() è già async-friendly nella v21
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
