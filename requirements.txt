@@ -1,4 +1,4 @@
-python-telegram-bot==21.0
+python-telegram-bot==20.7
 pytesseract==0.3.13
 opencv-python-headless==4.10.0.84
 numpy==2.1.0
