@@ -67,17 +67,18 @@ def trova_overall(immagine):
         config=config
     )
 
-    # Estrae numeri di tre cifre
-    numeri = re.findall(r"\b\d{3}\b", testo)
+# Accetta numeri di 2 o 3 cifre
+numeri = re.findall(r"\b\d{2,3}\b", testo)
 
-    risultati = []
+risultati = []
 
-    for numero in numeri:
-        valore = int(numero)
+for numero in numeri:
+    valore = int(numero)
 
-        # Filtro specifico per gli overall del tuo gioco
-        if 100 <= valore <= 150:
-            risultati.append(valore)
+    # Accetta overall da 40 a 150.
+    # Puoi cambiare questi limiti se nel gioco esistono valori diversi.
+    if 40 <= valore <= 150:
+        risultati.append(valore)
 
     return risultati
 
