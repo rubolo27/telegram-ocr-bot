@@ -1,15 +1,16 @@
 import os
 import re
-import numpy as np
+
 import cv2
+import numpy as np
 import pytesseract
 
 from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
@@ -21,34 +22,42 @@ async def start_command(
     context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     await update.message.reply_text(
-        "Bot attivo! Mandami uno screenshot delle formazioni."
+        "Bot attivo!\n\n"
+        "Mandami uno screenshot delle formazioni. "
+        "Calcolerò separatamente la media overall della squadra a sinistra "
+        "e della squadra a destra."
     )
 
 
-def trova_overall(immagine):
+def trova_overall(immagine) -> list[int]:
     """
     Legge gli overall da una porzione dell'immagine.
-    Gli overall validi sono compresi tra 100 e 150.
+    Sono ammessi overall di 2 o 3 cifre, tra 40 e 150.
     """
 
-    if immagine is None:
+    if immagine is None or immagine.size == 0:
         return []
 
+    # Converti l'immagine in bianco e nero
     gray = cv2.cvtColor(immagine, cv2.COLOR_BGR2GRAY)
 
-    # Ingrandimento per aiutare l'OCR
+    # Ingrandisce i caratteri, utile per screenshot mobile
     gray = cv2.resize(
         gray,
         None,
-        fx=3,
-        fy=3,
+        fx=4,
+        fy=4,
         interpolation=cv2.INTER_CUBIC
     )
 
-    # Contrasto automatico
-    gray = cv2.equalizeHist(gray)
+    # Aumenta contrasto locale
+    clahe = cv2.createCLAHE(
+        clipLimit=3.0,
+        tileGridSize=(8, 8)
+    )
+    gray = clahe.apply(gray)
 
-    # Soglia binaria
+    # Trasforma in immagine bianca e nera
     _, threshold = cv2.threshold(
         gray,
         0,
@@ -56,133 +65,149 @@ def trova_overall(immagine):
         cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )
 
-    # Cerca solo numeri di 3 cifre
-    config = (
-        "--psm 6 "
-        "-c tessedit_char_whitelist=0123456789"
-    )
+    # OCR: legge solo cifre
+    config = "--psm 6 -c tessedit_char_whitelist=0123456789"
 
     testo = pytesseract.image_to_string(
         threshold,
+        lang="eng",
         config=config
     )
 
-# Accetta numeri di 2 o 3 cifre
-numeri = re.findall(r"\b\d{2,3}\b", testo)
+    # Cerca numeri composti da 2 o 3 cifre
+    numeri_trovati = re.findall(r"\b\d{2,3}\b", testo)
 
-risultati = []
+    overall = []
 
-for numero in numeri:
-    valore = int(numero)
+    for numero in numeri_trovati:
+        valore = int(numero)
 
-    # Accetta overall da 40 a 150.
-    # Puoi cambiare questi limiti se nel gioco esistono valori diversi.
-    if 40 <= valore <= 150:
-        risultati.append(valore)
+        # Accetta gli overall plausibili per il gioco.
+        # Esclude numeri di maglia 1, 5, 17 ecc.
+        if 40 <= valore <= 150:
+            overall.append(valore)
 
-    return risultati
+    # Elimina eventuali duplicati consecutivi generati dall'OCR
+    risultati = []
+
+    for valore in overall:
+        if not risultati or risultati[-1] != valore:
+            risultati.append(valore)
+
+    # Una squadra ha al massimo 11 giocatori
+    return risultati[:11]
+
+
+def calcola_media(numeri: list[int]) -> float | None:
+    if not numeri:
+        return None
+
+    return sum(numeri) / len(numeri)
 
 
 async def handle_photo(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-
     try:
         await update.message.reply_text(
-            "Sto leggendo le due formazioni..."
+            "Sto analizzando le due formazioni..."
         )
 
-        # Scarica l'immagine ricevuta
-        foto = update.message.photo[-1]
-        file = await foto.get_file()
-        immagine_bytes = await file.download_as_bytearray()
+        # Prende la versione più grande della foto ricevuta
+        photo = update.message.photo[-1]
 
-        immagine = cv2.imdecode(
-            np.frombuffer(immagine_bytes, np.uint8),
+        telegram_file = await photo.get_file()
+        image_bytes = await telegram_file.download_as_bytearray()
+
+        image = cv2.imdecode(
+            np.frombuffer(image_bytes, np.uint8),
             cv2.IMREAD_COLOR
         )
 
-        if immagine is None:
+        if image is None:
             await update.message.reply_text(
-                "Non riesco a leggere questa immagine."
+                "Non riesco a leggere questa immagine. "
+                "Prova a inviarla di nuovo come foto."
             )
             return
 
-        altezza, larghezza = immagine.shape[:2]
+        altezza, larghezza = image.shape[:2]
 
-        # Ritaglia le zone delle due squadre.
-        # Escludiamo titolo, pulsanti e parte centrale.
-        sinistra = immagine[
-            int(altezza * 0.20):int(altezza * 0.90),
-            int(larghezza * 0.13):int(larghezza * 0.39)
+        # Ritagli adattati al layout mostrato nello screenshot:
+        #
+        # - Sinistra: tabella rossa Sporting CP
+        # - Destra: tabella azzurra Atalanta
+        #
+        # Il ritaglio include solo la fascia finale, dove si trovano
+        # i valori overall, per evitare i numeri di maglia.
+        #
+        # Le percentuali funzionano anche con immagini di dimensioni diverse.
+        left_overall_area = image[
+            int(altezza * 0.23):int(altezza * 0.88),
+            int(larghezza * 0.33):int(larghezza * 0.38)
         ]
 
-        destra = immagine[
-            int(altezza * 0.20):int(altezza * 0.90),
-            int(larghezza * 0.61):int(larghezza * 0.87)
+        right_overall_area = image[
+            int(altezza * 0.23):int(altezza * 0.88),
+            int(larghezza * 0.83):int(larghezza * 0.88)
         ]
 
-        overall_sinistra = trova_overall(sinistra)
-        overall_destra = trova_overall(destra)
+        overall_sinistra = trova_overall(left_overall_area)
+        overall_destra = trova_overall(right_overall_area)
 
-        # Teniamo al massimo 11 giocatori per squadra
-        overall_sinistra = overall_sinistra[:11]
-        overall_destra = overall_destra[:11]
+        media_sinistra = calcola_media(overall_sinistra)
+        media_destra = calcola_media(overall_destra)
 
         if not overall_sinistra and not overall_destra:
             await update.message.reply_text(
-                "Non ho trovato gli overall.\n\n"
-                "Controlla che lo screenshot sia nitido e che "
-                "i numeri siano visibili."
+                "Non sono riuscito a trovare gli overall.\n\n"
+                "Invia uno screenshot nitido, con le due liste ben visibili. "
+                "Meglio inviarlo come immagine e non come documento."
             )
             return
 
-        messaggio = ""
+        messaggio = "RISULTATO OCR\n\n"
 
         if overall_sinistra:
-            media_sinistra = sum(overall_sinistra) / len(overall_sinistra)
-
             messaggio += (
                 "SQUADRA SINISTRA\n"
-                f"Overall: {', '.join(map(str, overall_sinistra))}\n"
-                f"Giocatori letti: {len(overall_sinistra)}\n"
+                f"Overall trovati: {', '.join(map(str, overall_sinistra))}\n"
+                f"Giocatori letti: {len(overall_sinistra)}/11\n"
                 f"Media overall: {media_sinistra:.2f}\n"
             )
         else:
             messaggio += (
                 "SQUADRA SINISTRA\n"
-                "Nessun overall rilevato.\n"
+                "Nessun overall trovato.\n"
             )
 
         messaggio += "\n"
 
         if overall_destra:
-            media_destra = sum(overall_destra) / len(overall_destra)
-
             messaggio += (
                 "SQUADRA DESTRA\n"
-                f"Overall: {', '.join(map(str, overall_destra))}\n"
-                f"Giocatori letti: {len(overall_destra)}\n"
-                f"Media overall: {media_destra:.2f}\n"
+                f"Overall trovati: {', '.join(map(str, overall_destra))}\n"
+                f"Giocatori letti: {len(overall_destra)}/11\n"
+                f"Media overall: {media_destra:.2f}"
             )
         else:
             messaggio += (
                 "SQUADRA DESTRA\n"
-                "Nessun overall rilevato.\n"
+                "Nessun overall trovato."
             )
 
         await update.message.reply_text(messaggio)
 
-     except Exception as errore:
+    except Exception as errore:
+        # Il dettaglio viene scritto nei log Railway
         print(f"Errore OCR completo: {repr(errore)}")
 
         await update.message.reply_text(
-            "Errore durante la lettura dell'immagine.\n"
-            "Controlla i log su Railway: serve il dettaglio dell'errore."
+            "Si è verificato un errore durante la lettura dell'immagine.\n"
+            "Controlla i log di Railway e cerca la riga: "
+            "'Errore OCR completo'."
         )
-
-        print(f"Errore OCR: {errore}")
 
 
 def main() -> None:
