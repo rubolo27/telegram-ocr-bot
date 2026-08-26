@@ -4,12 +4,12 @@ import numpy as np
 import cv2
 import pytesseract
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-# Il token viene preso dalle variabili d'ambiente di Render
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
-async def handle_photo(update: Update, context):
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Scarica la foto
     photo = await update.message.photo[-1].get_file()
     img_bytes = await photo.download_as_bytearray()
@@ -36,11 +36,13 @@ async def handle_photo(update: Update, context):
         f"Overall trovati: {numbers}\nMedia overall: {avg:.1f}"
     )
 
-def main():
+
+def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    # Polling semplice, va bene su Render
+    # run_polling() è già async-friendly nella v21
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
 
 if __name__ == "__main__":
     main()
