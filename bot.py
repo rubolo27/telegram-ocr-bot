@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
 
 # Il token viene preso dalle variabili d'ambiente di Render
-BOT_TOKEN = os.environ[""]
+BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 async def handle_photo(update: Update, context):
     # Scarica la foto
